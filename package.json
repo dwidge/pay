@@ -1,0 +1,30 @@
+{
+  "name": "@dwidge/pay",
+  "version": "0.0.0",
+  "license": "BSL-1.0",
+  "type": "module",
+  "exports": {
+    ".": "./dist/index.js",
+    "./*": "./dist/*.js"
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "prepare": "tsc",
+    "test": "tsc && node --enable-source-maps --test",
+    "dev": "dotenv-flow npm run"
+  },
+  "peerDependencies": {
+    "axios": "^1.6.2",
+    "change-case": "^4.1.2",
+    "stripe": "^14.5.0",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "dotenv-flow-cli": "^1.0.0",
+    "expect": "^29.7.0",
+    "typescript": "^5.2.2"
+  }
+}
