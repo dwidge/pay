@@ -20,7 +20,7 @@ export const PayIntent = z.object({
   customerId: z.string(),
   amount: z.number(),
   currency: z.string(),
-  data: z.ostring(),
+  data: z.string(),
 });
 export type PayIntent = z.infer<typeof PayIntent>;
 
@@ -43,7 +43,8 @@ export interface Pay {
     currency: string
   ): Promise<PayIntent>;
   verifyEvent(
-    payload: string | Buffer,
+    body: object,
+    rawBody: string | Buffer,
     headers: Record<string, string | string[]>
   ): Promise<PayEvent>;
 }

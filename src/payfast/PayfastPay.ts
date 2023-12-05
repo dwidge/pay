@@ -9,7 +9,7 @@ import {
   PayfastIntent,
 } from "./PayfastTypes.js";
 
-import { Pay, PayEvent, User } from "../Pay.js";
+import { Pay, PayEvent, PayIntent, User } from "../Pay.js";
 import {
   getParamString,
   getSignature,
@@ -37,7 +37,7 @@ export class PayfastPay implements Pay {
     item: string,
     amount: number,
     currency: string
-  ) {
+  ): Promise<PayIntent> {
     const paymentId = "pf_" + randId(11);
     const data = await this.getOnceoffForm(user, paymentId, amount, item);
 
@@ -101,11 +101,11 @@ export class PayfastPay implements Pay {
   async destroyCustomer(user: User): Promise<void> {}
 
   async verifyEvent(
-    payload: string | Buffer,
+    body: object,
+    rawBody: string | Buffer,
     headers: Record<string, string | string[]>
   ): Promise<PayEvent> {
-    await validatePayfast(payload, headers, this.config);
-    const event = PayfastEvent.partial().parse(JSON.parse(payload.toString()));
+    const event = await validatePayfast(body, headers, this.config);
     if (!event.m_payment_id) throw new Error("verifyEventPayfastPayE1");
 
     return {
@@ -114,5 +114,50 @@ export class PayfastPay implements Pay {
       type: event.payment_status,
       data: JSON.stringify(event),
     };
+  }
+
+  async createEvent(
+    intent: PayIntent,
+    status: "COMPLETE" | "CANCELLED" = "COMPLETE"
+  ): Promise<{
+    body: PayfastEvent;
+    rawBody: string | Buffer;
+    headers: Record<string, string | string[]>;
+  }> {
+    const fee = 5;
+    const data = PayfastIntent.parse(JSON.parse(intent.data));
+
+    const body: PayfastEvent = {
+      m_payment_id: intent.paymentId,
+      pf_payment_id: "pf_" + randId(11),
+      payment_status: status,
+      item_name: data.item_name,
+      item_description: data.item_description ?? "",
+      amount_gross: (+data.amount).toFixed(2),
+      amount_fee: fee.toFixed(2),
+      amount_net: (+data.amount - fee).toFixed(2),
+      custom_str1: data.custom_str1,
+      custom_str2: data.custom_str2,
+      custom_str3: data.custom_str3,
+      custom_str4: data.custom_str4,
+      custom_str5: data.custom_str5,
+      custom_int1: data.custom_int1?.toString(),
+      custom_int2: data.custom_int2?.toString(),
+      custom_int3: data.custom_int3?.toString(),
+      custom_int4: data.custom_int4?.toString(),
+      custom_int5: data.custom_int5?.toString(),
+      name_first: data.name_first,
+      name_last: data.name_last,
+      email_address: data.email_address,
+      merchant_id: data.merchant_id,
+      signature: "",
+    };
+    body["signature"] = getSignature(
+      getParamString(body),
+      this.config.passPhrase
+    );
+    const headers = { "x-forwarded-for": "127.0.0.1" };
+
+    return { body, headers, rawBody: JSON.stringify(body) };
   }
 }

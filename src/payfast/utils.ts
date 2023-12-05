@@ -6,12 +6,16 @@ import axios from "axios";
 import crypto from "crypto";
 import dns from "node:dns";
 
-import { PayfastEnv } from "./PayfastTypes.js";
+import { PayfastEnv, PayfastEvent } from "./PayfastTypes.js";
 
 export function getParamString(pfData: Record<string, string>) {
   let pfParamString = "";
   for (let key in pfData) {
-    if (pfData.hasOwnProperty(key) && key !== "signature") {
+    if (
+      pfData.hasOwnProperty(key) &&
+      key !== "signature" &&
+      pfData[key] != undefined
+    ) {
       pfParamString += `${key}=${encodeURIComponent(
         pfData[key].toString().trim()
       ).replace(/%20/g, "+")}&`;
@@ -110,12 +114,12 @@ const pfValidServerConfirmation = async (
 
 //developers.payfast.co.za/docs#step_4_confirm_payment
 export async function validatePayfast(
-  payload: string | Buffer,
+  payload: object,
   headers: Record<string, string | string[]>,
   env: PayfastEnv
 ) {
   const { passPhrase = "", host = "sandbox.payfast.co.za" } = env;
-  const pfData = JSON.parse(payload.toString());
+  const pfData = PayfastEvent.partial().parse(payload);
   const pfParamString = getParamString(pfData);
 
   if (pfData["signature"] !== getSignature(pfParamString, passPhrase))
@@ -123,6 +127,8 @@ export async function validatePayfast(
 
   if (env.hookCheckAddress) await pfValidIP(headers);
   if (env.hookCheckServer) await pfValidServerConfirmation(host, pfParamString);
+
+  return pfData;
 }
 
 export function pingPayfast({

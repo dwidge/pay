@@ -124,10 +124,11 @@ export class StripePay implements Pay {
   }
 
   async verifyEvent(
-    payload: string | Buffer,
+    body: object,
+    rawBody: string | Buffer,
     headers: Record<string, string | string[]>
   ): Promise<PayEvent> {
-    const event = await this.verifyStripeEvent(payload, headers);
+    const event = await this.verifyStripeEvent(rawBody, headers);
     const data = event.data.object;
     const paymentId = z.string().parse(data.id);
     const status =
