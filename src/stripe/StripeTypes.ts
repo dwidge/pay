@@ -13,6 +13,7 @@ export const StripeEnv = object({
   merchantDisplayName: string(),
   successUrl: string(),
   cancelUrl: string().optional(),
+  testClockId: string().optional(),
 });
 export type StripeEnv = z.infer<typeof StripeEnv>;
 

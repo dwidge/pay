@@ -48,3 +48,21 @@ export interface Pay {
     headers: Record<string, string | string[]>
   ): Promise<PayEvent>;
 }
+
+export const Plan = z.object({
+  id: z.string(),
+  name: z.string(),
+  price: z.number(),
+  term: z.enum(["month", "year"]),
+});
+export type Plan = z.infer<typeof Plan>;
+
+export const UserPlan = z.object({
+  userId: z.string(),
+  customerId: z.string(),
+  planId: z.string(),
+  createDate: z.date(),
+  payDate: z.date().optional(),
+  expireDate: z.date().optional(),
+});
+export type UserPlan = z.infer<typeof UserPlan>;
