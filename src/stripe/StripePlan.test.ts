@@ -42,7 +42,7 @@ describe("StripePlan", () => {
     testClock = await stripePay.createTime();
     hook = await makeStripeWebhook(stripePay.stripe);
   });
-  afterEach(() => hook.clear());
+  // afterEach(() => hook.clear());
   after(async () => {
     if (!stripePay) return;
     if (testClock) await stripePay.destroyTime(testClock);
@@ -56,12 +56,13 @@ describe("StripePlan", () => {
     await withCustomer(async (customer: User) => {
       const plan = Plan.parse({
         id: planId,
-        name: "testPlan",
+        name: "test_testStripePlanCancel",
         price: 1000,
-        term: "month",
+        currency: "usd",
+        interval: "month",
       });
       await signupSubscriptionInPortal(customer, plan, page);
-      await expectSubscriptionUpdated(customer);
+      await expectSubscriptionUpdated(customer, plan.id);
       await cancelSubscriptionInPortal(customer, page);
       await expectSubscriptionUpdatedCancelRequest(customer);
       await advanceClock(testClock);
@@ -70,6 +71,24 @@ describe("StripePlan", () => {
   });
   it("testStripePlanChange", async () => {});
   it("testStripePlanPaymentFail", async () => {});
+  it("testStripePlanCreate", async () => {
+    await withCustomer(async (customer: User) => {
+      const plan = await stripePay.createPlan({
+        name: "test_testStripePlanCreate",
+        price: 1000,
+        currency: "usd",
+        interval: "month",
+      });
+      await signupSubscriptionInPortal(customer, plan, page);
+      await expectSubscriptionUpdated(customer, plan.id);
+      await stripePay.destroyPlan(plan.id);
+      await expect(
+        signupSubscriptionInPortal(customer, plan, page)
+      ).rejects.toThrowError(
+        "The price specified is inactive. This field only accepts active prices."
+      );
+    });
+  });
 });
 
 async function withCustomer(f: (customer: User) => Promise<void>) {
@@ -110,7 +129,9 @@ async function signupSubscriptionInPortal(
   page: Page
 ) {
   const url = z.string().parse(
-    await stripePay.getPlanUrl(customer.customerId, plan, {
+    await stripePay.getPlanUrl({
+      customerId: customer.customerId,
+      planId: plan.id,
       successUrl: "http://localhost",
     })
   );
@@ -137,6 +158,7 @@ async function signupSubscriptionInPortal(
 async function expectSubscriptionUpdatedCancelRequest(customer: User) {
   await expect(
     hook.listen("customer.subscription.updated", {
+      customer: customer.customerId,
       cancel_at_period_end: true,
       status: "active",
     })
@@ -170,11 +192,11 @@ async function expectSubscriptionUpdatedCancelRequest(customer: User) {
 }
 
 async function cancelSubscriptionInPortal(customer: User, page: Page) {
-  const portalUrl = z
-    .string()
-    .parse(
-      await stripePay.getPortalUrl(customer.customerId, "http://localhost")
-    );
+  const portalUrl = z.string().parse(
+    await stripePay.getPortalUrl(customer.customerId, {
+      returnUrl: "http://localhost",
+    })
+  );
   console.log("Visit this page and cancel with feedback:", portalUrl);
 
   await page.goto(portalUrl);
@@ -186,9 +208,11 @@ async function cancelSubscriptionInPortal(customer: User, page: Page) {
   await page.getByTestId("cancellation_reason_submit").click();
 }
 
-async function expectSubscriptionUpdated(customer: User) {
+async function expectSubscriptionUpdated(customer: User, planId: string) {
   await expect(
-    hook.listen("customer.subscription.updated")
+    hook.listen("customer.subscription.updated", {
+      customer: customer.customerId,
+    })
   ).resolves.toMatchObject({
     type: "customer.subscription.updated",
     data: {

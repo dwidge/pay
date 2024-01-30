@@ -1,7 +1,7 @@
 import Stripe from "stripe";
+import { z } from "zod";
 import { PayEvent, Pay, User, Plan, UserPlan } from "../Pay.js";
 import { StripeContext, StripeEnv, StripeEvent } from "./StripeTypes.js";
-import { z } from "zod";
 import { getSecondsFromDate } from "../utils/getSecondsFromDate.js";
 
 type PayCallbacks = {
@@ -110,6 +110,11 @@ export class StripePay implements Pay {
       customerId,
     };
   }
+  async destroyCustomer(user: User): Promise<void> {
+    await this.stripe.customers.del(user.customerId).catch((cause) => {
+      throw new Error("destroyCustomerStripePayE1", { cause });
+    });
+  }
 
   async createTime(time: number = getSecondsFromDate()): Promise<string> {
     return this.stripe.testHelpers.testClocks
@@ -118,7 +123,6 @@ export class StripePay implements Pay {
       })
       .then((testClock) => testClock.id);
   }
-
   async advanceTime(
     timeId: string,
     time: number = getSecondsFromDate()
@@ -127,15 +131,8 @@ export class StripePay implements Pay {
       frozen_time: time,
     });
   }
-
   async destroyTime(timeId: string): Promise<void> {
     await this.stripe.testHelpers.testClocks.del(timeId);
-  }
-
-  async destroyCustomer(user: User): Promise<void> {
-    await this.stripe.customers.del(user.customerId).catch((cause) => {
-      throw new Error("destroyCustomerStripePayE1", { cause });
-    });
   }
 
   async verifyStripeEvent(
@@ -158,7 +155,6 @@ export class StripePay implements Pay {
       throw new Error("verifyEventStripePayE1", { cause });
     }
   }
-
   async verifyEvent(
     body: object,
     rawBody: string | Buffer,
@@ -177,49 +173,6 @@ export class StripePay implements Pay {
       data: JSON.stringify(data),
     };
   }
-
-  async getPlanUrl(
-    customerId: string,
-    plan: Plan,
-    options?: {
-      successUrl?: string;
-      cancelUrl?: string;
-      planGroup?: Plan[];
-    }
-  ) {
-    if (
-      options?.planGroup &&
-      (await this.somePlanActive(
-        options.planGroup.map((p) => p.id),
-        customerId
-      ))
-    )
-      throw new Error("getPlanUrlE1: Customer already has plan");
-
-    const session = await this.stripe.checkout.sessions.create({
-      customer: customerId,
-      line_items: [
-        {
-          price: plan.id,
-          quantity: 1,
-        },
-      ],
-      mode: "subscription",
-      success_url: options?.successUrl,
-      cancel_url: options?.cancelUrl,
-    });
-
-    if (!session.url) throw new Error("getPlanUrlE2");
-
-    return session.url;
-  }
-
-  async somePlanActive(planIds: string[], customerId: string) {
-    const subscriptions = await this.stripe.subscriptions.list({
-      customer: customerId,
-    });
-    return subscriptions.data.some((s) => planIds.includes(s.id));
-  }
   async handleStripeEvent(event: Stripe.Event) {
     if (event.type === "customer.subscription.created") {
       const customerId = event.data.object.customer.toString();
@@ -232,15 +185,57 @@ export class StripePay implements Pay {
       const subs = event.data.object.items.data.map((v) => v);
     }
   }
-  async getPortalUrl(customerId: string, returnUrl: string) {
+
+  async getPortalUrl(customerId: string, options?: { returnUrl?: string }) {
     const session = await this.stripe.billingPortal.sessions.create({
       customer: customerId,
-      return_url: returnUrl,
+      return_url: options?.returnUrl,
     });
     return session.url;
   }
-  async createPrice(plan: Plan) {
-    const session = await this.stripe.prices.create({ currency: "us" });
+  async getPlanUrl(options: {
+    planId: string;
+    customerId: string;
+    successUrl?: string;
+    cancelUrl?: string;
+  }) {
+    const session = await this.stripe.checkout.sessions.create({
+      customer: options.customerId,
+      line_items: [
+        {
+          price: options.planId,
+          quantity: 1,
+        },
+      ],
+      mode: "subscription",
+      success_url: options?.successUrl,
+      cancel_url: options?.cancelUrl,
+    });
+
+    if (!session.url) throw new Error("getPlanUrlE2");
+
+    return session.url;
   }
-  async destroyPrice(planId: string) {}
+  async somePlanActive(planIds: string[], customerId: string) {
+    const subscriptions = await this.stripe.subscriptions.list({
+      customer: customerId,
+    });
+    return subscriptions.data.some((s) => planIds.includes(s.id));
+  }
+  async createPlan(newPlan: Readonly<Omit<Plan, "id">>) {
+    newPlan = Plan.omit({ id: true }).parse(newPlan);
+    const plan = await this.stripe.prices.create({
+      billing_scheme: "per_unit",
+      unit_amount: newPlan.price,
+      currency: newPlan.currency,
+      recurring: {
+        interval: newPlan.interval,
+      },
+      product_data: { name: newPlan.name },
+    });
+    return Plan.parse({ ...newPlan, id: plan.id });
+  }
+  async destroyPlan(planId: string) {
+    await this.stripe.prices.update(planId, { active: false });
+  }
 }
