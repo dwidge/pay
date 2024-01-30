@@ -1,4 +1,4 @@
-import { beforeEach, afterEach, after, describe, it } from "node:test";
+import { before, afterEach, after, describe, it } from "node:test";
 import { expect } from "expect";
 import { StripePay } from "./StripePay.js";
 import { StripeEnv } from "./StripeTypes.js";
@@ -33,61 +33,26 @@ const testEmail = testConfig.TEST_EMAIL;
 let stripeEnv: StripeEnv;
 let stripePay: StripePay;
 let hook: Awaited<ReturnType<typeof makeStripeWebhook>>;
+let testClock: string;
 
 describe("StripePlan", () => {
-  beforeEach(async () => {
-    if (stripePay) return;
+  before(async () => {
     stripeEnv = getStripeEnv(process.env);
     stripePay = new StripePay(stripeEnv);
-    const stripe = stripePay.stripe;
-    const testClock = await stripe.testHelpers.testClocks.create({
-      frozen_time: getSecondsFromDate(),
-      name: "Plans",
-    });
-    stripePay.testClockId = testClock.id;
+    testClock = await stripePay.createTime();
     hook = await makeStripeWebhook(stripePay.stripe);
   });
   afterEach(() => hook.clear());
   after(async () => {
     if (!stripePay) return;
-    const stripe = stripePay.stripe;
-    if (stripePay.testClockId)
-      await stripe.testHelpers.testClocks.del(stripePay.testClockId);
-
-    await hook.close();
-
+    if (testClock) await stripePay.destroyTime(testClock);
+    if (hook) await hook.close();
     await page.close();
     await context.close();
     await browser.close();
   });
 
-  async function withCustomer(f: (customer: User) => Promise<void>) {
-    const stripe = stripePay.stripe;
-    const user = {
-      firstName: "test_John",
-      lastName: "test_Doe",
-      email: makeEmailAlias(testEmail),
-      phone: "555-555-7890",
-    };
-    const customer = await stripePay.createCustomer(user);
-    try {
-      expect(customer).toEqual(expect.objectContaining(user));
-      expect(customer.customerId).toEqual(expect.any(String));
-      await expect(hook.listen("customer.created")).resolves.toMatchObject({
-        type: "customer.created",
-        data: { object: { email: user.email } },
-      });
-      await f(customer);
-    } finally {
-      await stripePay.destroyCustomer(customer);
-      await expect(hook.listen("customer.deleted")).resolves.toMatchObject({
-        type: "customer.deleted",
-        data: { object: { email: user.email } },
-      });
-    }
-  }
-
-  it("testStripePlanCustomer", async () => {
+  it("testStripePlanCancel", async () => {
     await withCustomer(async (customer: User) => {
       const plan = Plan.parse({
         id: planId,
@@ -97,23 +62,46 @@ describe("StripePlan", () => {
       });
       await signupSubscriptionInPortal(customer, plan, page);
       await expectSubscriptionUpdated(customer);
-
       await cancelSubscriptionInPortal(customer, page);
       await expectSubscriptionUpdatedCancelRequest(customer);
-      await advanceClock();
+      await advanceClock(testClock);
       await expectSubscriptionDeleted(customer);
     });
   });
+  it("testStripePlanChange", async () => {});
+  it("testStripePlanPaymentFail", async () => {});
 });
 
-async function advanceClock() {
-  const stripe = stripePay.stripe;
-  const { testClockId } = stripePay;
-  if (!testClockId) throw new Error("testClockId1");
+async function withCustomer(f: (customer: User) => Promise<void>) {
+  const user = {
+    firstName: "test_John",
+    lastName: "test_Doe",
+    email: makeEmailAlias(testEmail),
+    phone: "555-555-7890",
+  };
+  const customer = await stripePay.createCustomer(user, testClock);
+  try {
+    expect(customer).toEqual(expect.objectContaining(user));
+    expect(customer.customerId).toEqual(expect.any(String));
+    await expect(hook.listen("customer.created")).resolves.toMatchObject({
+      type: "customer.created",
+      data: { object: { email: user.email } },
+    });
+    await f(customer);
+  } finally {
+    await stripePay.destroyCustomer(customer);
+    await expect(hook.listen("customer.deleted")).resolves.toMatchObject({
+      type: "customer.deleted",
+      data: { object: { email: user.email } },
+    });
+  }
+}
 
-  await stripe.testHelpers.testClocks.advance(testClockId, {
-    frozen_time: getSecondsFromDate() + getSecondsFromDays(45),
-  });
+async function advanceClock(timeId: string, days: number = 32) {
+  await stripePay.advanceTime(
+    timeId,
+    getSecondsFromDate() + getSecondsFromDays(days)
+  );
 }
 
 async function signupSubscriptionInPortal(

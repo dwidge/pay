@@ -2,6 +2,7 @@ import Stripe from "stripe";
 import { PayEvent, Pay, User, Plan, UserPlan } from "../Pay.js";
 import { StripeContext, StripeEnv, StripeEvent } from "./StripeTypes.js";
 import { z } from "zod";
+import { getSecondsFromDate } from "../utils/getSecondsFromDate.js";
 
 type PayCallbacks = {
   getUserCustomerId?: (userId: string) => Promise<string>;
@@ -13,7 +14,6 @@ type PayCallbacks = {
 export class StripePay implements Pay {
   public stripe: Stripe;
   public config: StripeEnv;
-  public testClockId?: string;
   public callbacks?: PayCallbacks;
 
   constructor(config: StripeEnv, callbacks?: PayCallbacks) {
@@ -91,13 +91,16 @@ export class StripePay implements Pay {
     };
   }
 
-  async createCustomer(user: Omit<User, "customerId">): Promise<User> {
+  async createCustomer(
+    user: Omit<User, "customerId">,
+    timeId?: string
+  ): Promise<User> {
     const { id: customerId } = await this.stripe.customers
       .create({
         email: user.email,
         phone: user.phone,
-        name: user.firstName + " " + user.lastName ?? "",
-        test_clock: this.testClockId,
+        name: user.firstName + " " + (user.lastName ?? ""),
+        test_clock: timeId,
       })
       .catch((cause) => {
         throw new Error("createCustomerStripePayE1", { cause });
@@ -106,6 +109,27 @@ export class StripePay implements Pay {
       ...user,
       customerId,
     };
+  }
+
+  async createTime(time: number = getSecondsFromDate()): Promise<string> {
+    return this.stripe.testHelpers.testClocks
+      .create({
+        frozen_time: time,
+      })
+      .then((testClock) => testClock.id);
+  }
+
+  async advanceTime(
+    timeId: string,
+    time: number = getSecondsFromDate()
+  ): Promise<void> {
+    await this.stripe.testHelpers.testClocks.advance(timeId, {
+      frozen_time: time,
+    });
+  }
+
+  async destroyTime(timeId: string): Promise<void> {
+    await this.stripe.testHelpers.testClocks.del(timeId);
   }
 
   async destroyCustomer(user: User): Promise<void> {
@@ -170,7 +194,7 @@ export class StripePay implements Pay {
         customerId
       ))
     )
-      throw new Error("addPlanE1: Customer already has plan");
+      throw new Error("getPlanUrlE1: Customer already has plan");
 
     const session = await this.stripe.checkout.sessions.create({
       customer: customerId,
@@ -184,8 +208,12 @@ export class StripePay implements Pay {
       success_url: options?.successUrl,
       cancel_url: options?.cancelUrl,
     });
+
+    if (!session.url) throw new Error("getPlanUrlE2");
+
     return session.url;
   }
+
   async somePlanActive(planIds: string[], customerId: string) {
     const subscriptions = await this.stripe.subscriptions.list({
       customer: customerId,
