@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { currencyCodes } from "./utils/currencyCodes.js";
 
 export const User = z.object({
   customerId: z.string(),
@@ -53,7 +54,8 @@ export const Plan = z.object({
   id: z.string(),
   name: z.string(),
   price: z.number(),
-  term: z.enum(["month", "year"]),
+  currency: z.enum(currencyCodes),
+  interval: z.enum(["month", "year"]),
 });
 export type Plan = z.infer<typeof Plan>;
 
