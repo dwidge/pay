@@ -5,14 +5,28 @@ import { StripeEnv } from "./StripeTypes.js";
 import { getStripeEnv } from "./env.js";
 import { z } from "zod";
 import { makeEmailAlias } from "../utils/makeId.js";
-import { makeStripeWebhook } from "../utils/makeStripeWebhook.js";
+import {
+  StripeWebhook,
+  makeStripeWebhook,
+} from "../utils/makeStripeWebhook.js";
 import { Plan, User } from "../Pay.js";
 import "../utils/toBeWithinRange.js";
 import {
   getSecondsFromDate,
   getSecondsFromDays,
 } from "../utils/getSecondsFromDate.js";
-import { Page, chromium } from "playwright";
+import { chromium } from "playwright";
+import {
+  signupSubscriptionInPortal,
+  cancelSubscriptionInPortal,
+  changeSubscriptionInPortal,
+} from "./customerPortalActions.js";
+import {
+  expectSubscriptionUpdated,
+  expectSubscriptionUpdatedCancelRequest,
+  expectSubscriptionDeleted,
+  expectSubscriptionEvent,
+} from "./expectEvent.js";
 
 const infiniteTestCard = "4242 4242 4242 4242";
 const emptyTestCard = "4000000000000341";
@@ -29,9 +43,10 @@ const testConfig = z
 const testEmail = testConfig.TEST_EMAIL;
 
 let stripeEnv: StripeEnv;
-let stripePay: StripePay;
-let hook: Awaited<ReturnType<typeof makeStripeWebhook>>;
+export let stripePay: StripePay;
+export let hook: StripeWebhook;
 let testPlan: Plan;
+let testPlan2: Plan;
 
 describe("StripePlan", () => {
   before(async () => {
@@ -39,8 +54,14 @@ describe("StripePlan", () => {
     stripePay = new StripePay(stripeEnv);
     hook = await makeStripeWebhook(stripePay.stripe);
     testPlan = await stripePay.createPlan({
-      name: "test_StripePlan",
+      name: "test_Plan",
       price: 1000,
+      currency: "usd",
+      interval: "month",
+    });
+    testPlan2 = await stripePay.createPlan({
+      name: "test_Plan2",
+      price: 2000,
       currency: "usd",
       interval: "month",
     });
@@ -48,6 +69,7 @@ describe("StripePlan", () => {
   after(async () => {
     if (!stripePay) return;
     if (testPlan) await stripePay.destroyPlan(testPlan.id);
+    if (testPlan2) await stripePay.destroyPlan(testPlan2.id);
     if (hook) await hook.close();
     await page.close();
     await context.close();
@@ -58,24 +80,29 @@ describe("StripePlan", () => {
     await withTime(async (timeId) => {
       await withCustomer({ timeId }, async (customer: User) => {
         await signupSubscriptionInPortal(
+          stripePay,
           customer,
           testPlan,
           page,
           infiniteTestCard
         );
-        await expectSubscriptionUpdated(customer, testPlan.id, "active");
-        await cancelSubscriptionInPortal(customer, page);
-        await expectSubscriptionUpdatedCancelRequest(customer, testPlan.id);
+        await expectSubscriptionUpdated(hook, customer, testPlan.id, "active");
+        await cancelSubscriptionInPortal(stripePay, customer, page);
+        await expectSubscriptionUpdatedCancelRequest(
+          hook,
+          customer,
+          testPlan.id
+        );
         await advanceClock(timeId);
-        await expectSubscriptionDeleted(customer, testPlan.id);
+        await expectSubscriptionDeleted(hook, customer, testPlan.id);
       });
     });
   });
-  it("testStripePlanSubChange", async () => {});
   it("testStripePlanSubPaymentFail", async () =>
     withTime(async (timeId) =>
       withCustomer({ timeId }, async (customer: User) => {
         await signupSubscriptionInPortal(
+          stripePay,
           customer,
           testPlan,
           page,
@@ -86,6 +113,7 @@ describe("StripePlan", () => {
         });
         await expect(
           expectSubscriptionEvent(
+            hook,
             "customer.subscription.created",
             customer,
             testPlan.id,
@@ -95,6 +123,7 @@ describe("StripePlan", () => {
         await advanceClock(timeId);
         await expect(
           expectSubscriptionEvent(
+            hook,
             "customer.subscription.updated",
             customer,
             testPlan.id,
@@ -113,12 +142,14 @@ describe("StripePlan", () => {
           interval: "month",
         });
         await signupSubscriptionInPortal(
+          stripePay,
           customer,
           plan,
           page,
           infiniteTestCard
         );
         await expectSubscriptionEvent(
+          hook,
           "customer.subscription.updated",
           customer,
           plan.id,
@@ -126,7 +157,13 @@ describe("StripePlan", () => {
         );
         await stripePay.destroyPlan(plan.id);
         await expect(
-          signupSubscriptionInPortal(customer, plan, page, infiniteTestCard)
+          signupSubscriptionInPortal(
+            stripePay,
+            customer,
+            plan,
+            page,
+            infiniteTestCard
+          )
         ).rejects.toThrowError(
           "The price specified is inactive. This field only accepts active prices."
         );
@@ -182,230 +219,6 @@ async function advanceClock(timeId: string, days: number = 32) {
     data: {
       object: {
         id: timeId,
-      },
-    },
-  });
-}
-
-async function signupSubscriptionInPortal(
-  customer: User,
-  plan: Plan,
-  page: Page,
-  card: string
-) {
-  const url = z.string().parse(
-    await stripePay.getPlanUrl({
-      customerId: customer.customerId,
-      planId: plan.id,
-      successUrl: "http://localhost",
-    })
-  );
-  expect(url).toMatch("https://checkout.stripe.com/c/pay/");
-  console.log("Visit this page:", url);
-  console.log(
-    "Test payments:",
-    "https://stripe.com/docs/billing/subscriptions/build-subscriptions?ui=stripe-hosted#test-payment-methods"
-  );
-
-  await page.goto(url);
-  await page.getByPlaceholder("1234 1234 1234").click();
-  await page.getByPlaceholder("1234 1234 1234").fill(card);
-  await page.getByPlaceholder("MM / YY").click();
-  await page.getByPlaceholder("MM / YY").fill("01 / 26");
-  await page.getByPlaceholder("CVC").click();
-  await page.getByPlaceholder("CVC").fill("123");
-  await page.getByPlaceholder("MM / YY").click();
-  await page.getByPlaceholder("Full name on card").click();
-  await page.getByPlaceholder("Full name on card").fill("test");
-  await page.getByTestId("hosted-payment-submit-button").click();
-}
-
-async function expectSubscriptionUpdatedCancelRequest(
-  customer: User,
-  planId: string
-) {
-  await expect(
-    hook.listen({
-      type: "customer.subscription.updated",
-      data: {
-        object: {
-          customer: customer.customerId,
-          cancel_at_period_end: true,
-          status: "active",
-        },
-      },
-    })
-  ).resolves.toMatchObject({
-    type: "customer.subscription.updated",
-    data: {
-      object: {
-        customer: customer.customerId,
-        current_period_end: expect.any(Number),
-        current_period_start: expect.any(Number),
-        status: "active",
-        cancellation_details: {
-          reason: "cancellation_requested",
-        },
-        cancel_at: expect.any(Number),
-        cancel_at_period_end: true,
-        items: {
-          object: "list",
-          data: [
-            {
-              object: "subscription_item",
-              plan: {
-                id: planId,
-              },
-            },
-          ],
-        },
-      },
-    },
-  });
-}
-
-async function cancelSubscriptionInPortal(customer: User, page: Page) {
-  const portalUrl = z.string().parse(
-    await stripePay.getPortalUrl(customer.customerId, {
-      returnUrl: "http://localhost",
-    })
-  );
-  console.log("Visit this page and cancel with feedback:", portalUrl);
-
-  await page.goto(portalUrl);
-  await page.locator('[data-test="cancel-subscription"]').click();
-  await page.getByTestId("confirm").click();
-  await page
-    .locator('[data-test="cancel-reason-opt-missing_features"]')
-    .check();
-  await page.getByTestId("cancellation_reason_submit").click();
-}
-
-async function expectSubscriptionUpdated(
-  customer: User,
-  planId: string,
-  status: "active" | "canceled" | "incomplete"
-) {
-  await expect(
-    hook.listen({
-      type: "customer.subscription.updated",
-      data: {
-        object: {
-          customer: customer.customerId,
-          status,
-        },
-      },
-    })
-  ).resolves.toMatchObject({
-    type: "customer.subscription.updated",
-    data: {
-      object: {
-        customer: customer.customerId,
-        start_date: expect.any(Number),
-        current_period_end: expect.any(Number),
-        current_period_start: expect.any(Number),
-        status,
-        items: {
-          object: "list",
-          data: [
-            {
-              object: "subscription_item",
-              plan: {
-                id: planId,
-              },
-            },
-          ],
-        },
-      },
-    },
-  });
-}
-
-async function expectSubscriptionEvent(
-  type:
-    | "customer.subscription.created"
-    | "customer.subscription.updated"
-    | "customer.subscription.deleted",
-  customer: User,
-  planId: string,
-  status: "active" | "canceled" | "incomplete"
-) {
-  await expect(
-    hook.listen({
-      type,
-      data: {
-        object: {
-          customer: customer.customerId,
-          status,
-        },
-      },
-    })
-  ).resolves.toMatchObject({
-    type,
-    data: {
-      object: {
-        customer: customer.customerId,
-        start_date: expect.any(Number),
-        current_period_end: expect.any(Number),
-        current_period_start: expect.any(Number),
-        status,
-        items: {
-          object: "list",
-          data: [
-            {
-              object: "subscription_item",
-              plan: {
-                id: planId,
-              },
-            },
-          ],
-        },
-      },
-    },
-  });
-}
-
-async function expectSubscriptionDeleted(customer: User, planId: string) {
-  await expect(
-    hook.listen({
-      type: "customer.subscription.deleted",
-      data: {
-        object: {
-          customer: customer.customerId,
-          status: "canceled",
-        },
-      },
-    })
-  ).resolves.toMatchObject({
-    type: "customer.subscription.deleted",
-    data: {
-      object: {
-        customer: customer.customerId,
-        current_period_start: expect.toBeWithinRange(
-          getSecondsFromDate() + getSecondsFromDays(-1),
-          getSecondsFromDate() + getSecondsFromDays(1)
-        ),
-        current_period_end: expect.toBeWithinRange(
-          getSecondsFromDate() + getSecondsFromDays(27),
-          getSecondsFromDate() + getSecondsFromDays(32)
-        ),
-        status: "canceled",
-        cancellation_details: {
-          reason: "cancellation_requested",
-        },
-        cancel_at: expect.any(Number),
-        cancel_at_period_end: true,
-        items: {
-          object: "list",
-          data: [
-            {
-              object: "subscription_item",
-              plan: {
-                id: planId,
-              },
-            },
-          ],
-        },
       },
     },
   });

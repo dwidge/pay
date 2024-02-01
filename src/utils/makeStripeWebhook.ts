@@ -89,15 +89,17 @@ export const makeStripeWebhook = async (
   const filter = (mask: DeepPartial<Stripe.Event>) =>
     events.filter((v) => deepFilter(v, mask));
 
+  // removes first match and returns it
   const listen = (
     mask: DeepPartial<Stripe.Event>,
-    timeout = 10000,
+    timeout = 100000,
     interval = 500
   ) =>
     waitFor(
       async () => {
         const [event] = filter(mask);
         if (!event) throw new Error();
+        events.splice(events.indexOf(event), 1);
         return event;
       },
       timeout,
@@ -131,3 +133,5 @@ export const makeStripeWebhook = async (
 
   return { listen, filter, clear, close };
 };
+
+export type StripeWebhook = Awaited<ReturnType<typeof makeStripeWebhook>>;
