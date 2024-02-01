@@ -1,4 +1,4 @@
-import { before, afterEach, after, describe, it } from "node:test";
+import { before, after, describe, it } from "node:test";
 import { expect } from "expect";
 import { StripePay } from "./StripePay.js";
 import { StripeEnv } from "./StripeTypes.js";
@@ -23,97 +23,153 @@ const page = await context.newPage();
 
 const testConfig = z
   .object({
-    STRIPE_TEST_PLAN_ID: z.string(),
     TEST_EMAIL: z.string().default("test_John@example.com"),
   })
   .parse(process.env);
-const planId = testConfig.STRIPE_TEST_PLAN_ID;
 const testEmail = testConfig.TEST_EMAIL;
 
 let stripeEnv: StripeEnv;
 let stripePay: StripePay;
 let hook: Awaited<ReturnType<typeof makeStripeWebhook>>;
-let testClock: string;
+let testPlan: Plan;
 
 describe("StripePlan", () => {
   before(async () => {
     stripeEnv = getStripeEnv(process.env);
     stripePay = new StripePay(stripeEnv);
-    testClock = await stripePay.createTime();
     hook = await makeStripeWebhook(stripePay.stripe);
+    testPlan = await stripePay.createPlan({
+      name: "test_StripePlan",
+      price: 1000,
+      currency: "usd",
+      interval: "month",
+    });
   });
-  // afterEach(() => hook.clear());
   after(async () => {
     if (!stripePay) return;
-    if (testClock) await stripePay.destroyTime(testClock);
+    if (testPlan) await stripePay.destroyPlan(testPlan.id);
     if (hook) await hook.close();
     await page.close();
     await context.close();
     await browser.close();
   });
 
-  it("testStripePlanCancel", async () => {
-    await withCustomer(async (customer: User) => {
-      const plan = Plan.parse({
-        id: planId,
-        name: "test_testStripePlanCancel",
-        price: 1000,
-        currency: "usd",
-        interval: "month",
+  it("testStripePlanSubCancel", async () => {
+    await withTime(async (timeId) => {
+      await withCustomer({ timeId }, async (customer: User) => {
+        await signupSubscriptionInPortal(
+          customer,
+          testPlan,
+          page,
+          infiniteTestCard
+        );
+        await expectSubscriptionUpdated(customer, testPlan.id, "active");
+        await cancelSubscriptionInPortal(customer, page);
+        await expectSubscriptionUpdatedCancelRequest(customer, testPlan.id);
+        await advanceClock(timeId);
+        await expectSubscriptionDeleted(customer, testPlan.id);
       });
-      await signupSubscriptionInPortal(customer, plan, page);
-      await expectSubscriptionUpdated(customer, plan.id);
-      await cancelSubscriptionInPortal(customer, page);
-      await expectSubscriptionUpdatedCancelRequest(customer);
-      await advanceClock(testClock);
-      await expectSubscriptionDeleted(customer);
     });
   });
-  it("testStripePlanChange", async () => {});
-  it("testStripePlanPaymentFail", async () => {});
-  it("testStripePlanCreate", async () => {
-    await withCustomer(async (customer: User) => {
-      const plan = await stripePay.createPlan({
-        name: "test_testStripePlanCreate",
-        price: 1000,
-        currency: "usd",
-        interval: "month",
-      });
-      await signupSubscriptionInPortal(customer, plan, page);
-      await expectSubscriptionUpdated(customer, plan.id);
-      await stripePay.destroyPlan(plan.id);
-      await expect(
-        signupSubscriptionInPortal(customer, plan, page)
-      ).rejects.toThrowError(
-        "The price specified is inactive. This field only accepts active prices."
-      );
-    });
-  });
+  it("testStripePlanSubChange", async () => {});
+  it("testStripePlanSubPaymentFail", async () =>
+    withTime(async (timeId) =>
+      withCustomer({ timeId }, async (customer: User) => {
+        await signupSubscriptionInPortal(
+          customer,
+          testPlan,
+          page,
+          emptyTestCard
+        );
+        await hook.listen({
+          type: "invoice.updated",
+        });
+        await expect(
+          expectSubscriptionEvent(
+            "customer.subscription.created",
+            customer,
+            testPlan.id,
+            "incomplete"
+          )
+        );
+        await advanceClock(timeId);
+        await expect(
+          expectSubscriptionEvent(
+            "customer.subscription.updated",
+            customer,
+            testPlan.id,
+            "active"
+          )
+        ).rejects.toThrow();
+      })
+    ));
+  it("testStripePlanCreate", async () =>
+    withTime(async (timeId) =>
+      withCustomer({ timeId }, async (customer: User) => {
+        const plan = await stripePay.createPlan({
+          name: "test_testStripePlanCreate",
+          price: 1000,
+          currency: "usd",
+          interval: "month",
+        });
+        await signupSubscriptionInPortal(
+          customer,
+          plan,
+          page,
+          infiniteTestCard
+        );
+        await expectSubscriptionEvent(
+          "customer.subscription.updated",
+          customer,
+          plan.id,
+          "active"
+        );
+        await stripePay.destroyPlan(plan.id);
+        await expect(
+          signupSubscriptionInPortal(customer, plan, page, infiniteTestCard)
+        ).rejects.toThrowError(
+          "The price specified is inactive. This field only accepts active prices."
+        );
+      })
+    ));
 });
 
-async function withCustomer(f: (customer: User) => Promise<void>) {
+async function withCustomer(
+  { timeId }: { timeId?: string },
+  f: (customer: User) => Promise<void>
+) {
   const user = {
     firstName: "test_John",
     lastName: "test_Doe",
     email: makeEmailAlias(testEmail),
     phone: "555-555-7890",
   };
-  const customer = await stripePay.createCustomer(user, testClock);
+  const customer = await stripePay.createCustomer(user, timeId);
   try {
     expect(customer).toEqual(expect.objectContaining(user));
     expect(customer.customerId).toEqual(expect.any(String));
-    await expect(hook.listen("customer.created")).resolves.toMatchObject({
+    await expect(
+      hook.listen({
+        type: "customer.created",
+        data: { object: { email: user.email } },
+      })
+    ).resolves.toMatchObject({
       type: "customer.created",
       data: { object: { email: user.email } },
     });
     await f(customer);
   } finally {
     await stripePay.destroyCustomer(customer);
-    await expect(hook.listen("customer.deleted")).resolves.toMatchObject({
+    await hook.listen({
       type: "customer.deleted",
       data: { object: { email: user.email } },
     });
   }
+}
+
+async function withTime(f = async (timeId: string) => {}) {
+  const timeId = await stripePay.createTime();
+  return await f(timeId).finally(() => stripePay.destroyTime(timeId));
 }
 
 async function advanceClock(timeId: string, days: number = 32) {
@@ -121,12 +177,21 @@ async function advanceClock(timeId: string, days: number = 32) {
     timeId,
     getSecondsFromDate() + getSecondsFromDays(days)
   );
+  await hook.listen({
+    type: "test_helpers.test_clock.ready",
+    data: {
+      object: {
+        id: timeId,
+      },
+    },
+  });
 }
 
 async function signupSubscriptionInPortal(
   customer: User,
   plan: Plan,
-  page: Page
+  page: Page,
+  card: string
 ) {
   const url = z.string().parse(
     await stripePay.getPlanUrl({
@@ -144,9 +209,9 @@ async function signupSubscriptionInPortal(
 
   await page.goto(url);
   await page.getByPlaceholder("1234 1234 1234").click();
-  await page.getByPlaceholder("1234 1234 1234").fill(infiniteTestCard);
+  await page.getByPlaceholder("1234 1234 1234").fill(card);
   await page.getByPlaceholder("MM / YY").click();
-  await page.getByPlaceholder("MM / YY").fill("01 / 25");
+  await page.getByPlaceholder("MM / YY").fill("01 / 26");
   await page.getByPlaceholder("CVC").click();
   await page.getByPlaceholder("CVC").fill("123");
   await page.getByPlaceholder("MM / YY").click();
@@ -155,12 +220,20 @@ async function signupSubscriptionInPortal(
   await page.getByTestId("hosted-payment-submit-button").click();
 }
 
-async function expectSubscriptionUpdatedCancelRequest(customer: User) {
+async function expectSubscriptionUpdatedCancelRequest(
+  customer: User,
+  planId: string
+) {
   await expect(
-    hook.listen("customer.subscription.updated", {
-      customer: customer.customerId,
-      cancel_at_period_end: true,
-      status: "active",
+    hook.listen({
+      type: "customer.subscription.updated",
+      data: {
+        object: {
+          customer: customer.customerId,
+          cancel_at_period_end: true,
+          status: "active",
+        },
+      },
     })
   ).resolves.toMatchObject({
     type: "customer.subscription.updated",
@@ -208,10 +281,20 @@ async function cancelSubscriptionInPortal(customer: User, page: Page) {
   await page.getByTestId("cancellation_reason_submit").click();
 }
 
-async function expectSubscriptionUpdated(customer: User, planId: string) {
+async function expectSubscriptionUpdated(
+  customer: User,
+  planId: string,
+  status: "active" | "canceled" | "incomplete"
+) {
   await expect(
-    hook.listen("customer.subscription.updated", {
-      customer: customer.customerId,
+    hook.listen({
+      type: "customer.subscription.updated",
+      data: {
+        object: {
+          customer: customer.customerId,
+          status,
+        },
+      },
     })
   ).resolves.toMatchObject({
     type: "customer.subscription.updated",
@@ -221,7 +304,7 @@ async function expectSubscriptionUpdated(customer: User, planId: string) {
         start_date: expect.any(Number),
         current_period_end: expect.any(Number),
         current_period_start: expect.any(Number),
-        status: "active",
+        status,
         items: {
           object: "list",
           data: [
@@ -238,11 +321,60 @@ async function expectSubscriptionUpdated(customer: User, planId: string) {
   });
 }
 
-async function expectSubscriptionDeleted(customer: User) {
+async function expectSubscriptionEvent(
+  type:
+    | "customer.subscription.created"
+    | "customer.subscription.updated"
+    | "customer.subscription.deleted",
+  customer: User,
+  planId: string,
+  status: "active" | "canceled" | "incomplete"
+) {
   await expect(
-    hook.listen("customer.subscription.deleted", {
-      customer: customer.customerId,
-      status: "canceled",
+    hook.listen({
+      type,
+      data: {
+        object: {
+          customer: customer.customerId,
+          status,
+        },
+      },
+    })
+  ).resolves.toMatchObject({
+    type,
+    data: {
+      object: {
+        customer: customer.customerId,
+        start_date: expect.any(Number),
+        current_period_end: expect.any(Number),
+        current_period_start: expect.any(Number),
+        status,
+        items: {
+          object: "list",
+          data: [
+            {
+              object: "subscription_item",
+              plan: {
+                id: planId,
+              },
+            },
+          ],
+        },
+      },
+    },
+  });
+}
+
+async function expectSubscriptionDeleted(customer: User, planId: string) {
+  await expect(
+    hook.listen({
+      type: "customer.subscription.deleted",
+      data: {
+        object: {
+          customer: customer.customerId,
+          status: "canceled",
+        },
+      },
     })
   ).resolves.toMatchObject({
     type: "customer.subscription.deleted",

@@ -2,6 +2,9 @@ import express from "express";
 import Stripe from "stripe";
 import ngrok from "@ngrok/ngrok";
 import { destroyWebhooks } from "./destroyWebhooks.js";
+import { DeepPartial } from "./DeepPartial.js";
+import { deepFilter } from "./deepFilter.js";
+import { waitFor } from "./waitFor.js";
 
 declare module "express" {
   interface Request {
@@ -54,7 +57,7 @@ export const makeStripeWebhook = async (
     console.log(`Server running on port ${port}`);
   });
 
-  const listen = async (type: string, data: Record<string, any> = {}) => {
+  const listen2 = async (type: string, data: Record<string, any> = {}) => {
     return new Promise<Stripe.Event>((resolve) => {
       const interval = setInterval(() => {
         data;
@@ -83,6 +86,24 @@ export const makeStripeWebhook = async (
     });
   };
 
+  const filter = (mask: DeepPartial<Stripe.Event>) =>
+    events.filter((v) => deepFilter(v, mask));
+
+  const listen = (
+    mask: DeepPartial<Stripe.Event>,
+    timeout = 10000,
+    interval = 500
+  ) =>
+    waitFor(
+      async () => {
+        const [event] = filter(mask);
+        if (!event) throw new Error();
+        return event;
+      },
+      timeout,
+      interval
+    );
+
   const ngrokListener = await ngrok
     .forward({ addr: port, authtoken_from_env: true })
     .catch((e) => {
@@ -108,5 +129,5 @@ export const makeStripeWebhook = async (
     events = [];
   };
 
-  return { listen, clear, close };
+  return { listen, filter, clear, close };
 };
