@@ -93,6 +93,27 @@ describe("StripePlan", () => {
       });
     });
   });
+  it("testStripePlanSubChange", async () => {
+    await withTime(async (timeId) => {
+      await withCustomer({ timeId }, async (customer: User) => {
+        await signupSubscriptionInPortal(
+          stripePay,
+          customer,
+          testPlan,
+          page,
+          infiniteTestCard
+        );
+        await expectSubscriptionUpdated(hook, customer, testPlan.id, "active");
+        await changeSubscriptionInPortal(
+          stripePay,
+          customer,
+          page,
+          testPlan2.name
+        );
+        await expectSubscriptionUpdated(hook, customer, testPlan2.id, "active");
+      });
+    });
+  });
   it("testStripePlanSubPaymentFail", async () =>
     withTime(async (timeId) =>
       withCustomer({ timeId }, async (customer: User) => {

@@ -70,16 +70,15 @@ export async function changeSubscriptionInPortal(
       returnUrl: "http://localhost",
     })
   );
-  console.log("Visit this page and change plan:", portalUrl);
+  console.log("Visit this page and change plan:", planName, portalUrl);
 
   await page.goto(portalUrl);
   await page.locator('[data-test="update-subscription"]').click();
-  // await page
-  //   .locator("div")
-  //   .filter({ hasText: planName })
-  //   .getByRole("button")
-  //   .click();
-  await page.getByText(planName).getByRole("button").click();
+  await page
+    .locator("div")
+    .filter({ hasText: new RegExp(`^${planName}.*Select$`) })
+    .getByRole("button")
+    .click();
   await page.getByTestId("continue-button").click();
   await page.getByTestId("confirm").click();
   await page.getByTestId("return-to-business-link").click();
