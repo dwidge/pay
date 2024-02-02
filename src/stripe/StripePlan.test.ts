@@ -31,8 +31,13 @@ import {
 const infiniteTestCard = "4242 4242 4242 4242";
 const emptyTestCard = "4000000000000341";
 
-const browser = await chromium.launch({ headless: false, slowMo: 50 });
-const context = await browser.newContext();
+const browser = await chromium.launch({
+  headless: false,
+  slowMo: 50,
+});
+const context = await browser.newContext({
+  viewport: { width: 600, height: 400 },
+});
 const page = await context.newPage();
 
 const testConfig = z
