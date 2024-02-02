@@ -235,6 +235,18 @@ export class StripePay implements Pay {
     });
     return Plan.parse({ ...newPlan, id: plan.id });
   }
+  async getPlan(planId: string) {
+    const plan = await this.stripe.prices.retrieve(planId, {
+      expand: ["product"],
+    });
+    return Plan.parse({
+      id: plan.id,
+      name: (plan.product as Stripe.Product).name,
+      price: plan.unit_amount,
+      currency: plan.currency,
+      interval: plan.recurring?.interval,
+    });
+  }
   async destroyPlan(planId: string) {
     await this.stripe.prices.update(planId, { active: false });
   }

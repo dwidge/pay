@@ -38,6 +38,8 @@ const page = await context.newPage();
 const testConfig = z
   .object({
     TEST_EMAIL: z.string().default("test_John@example.com"),
+    STRIPE_TEST_PLAN1_ID: z.string(),
+    STRIPE_TEST_PLAN2_ID: z.string(),
   })
   .parse(process.env);
 const testEmail = testConfig.TEST_EMAIL;
@@ -53,23 +55,11 @@ describe("StripePlan", () => {
     stripeEnv = getStripeEnv(process.env);
     stripePay = new StripePay(stripeEnv);
     hook = await makeStripeWebhook(stripePay.stripe);
-    testPlan = await stripePay.createPlan({
-      name: "test_Plan",
-      price: 1000,
-      currency: "usd",
-      interval: "month",
-    });
-    testPlan2 = await stripePay.createPlan({
-      name: "test_Plan2",
-      price: 2000,
-      currency: "usd",
-      interval: "month",
-    });
+    testPlan = await stripePay.getPlan(testConfig.STRIPE_TEST_PLAN1_ID);
+    testPlan2 = await stripePay.getPlan(testConfig.STRIPE_TEST_PLAN2_ID);
   });
   after(async () => {
     if (!stripePay) return;
-    if (testPlan) await stripePay.destroyPlan(testPlan.id);
-    if (testPlan2) await stripePay.destroyPlan(testPlan2.id);
     if (hook) await hook.close();
     await page.close();
     await context.close();
