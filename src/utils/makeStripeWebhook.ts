@@ -92,7 +92,7 @@ export const makeStripeWebhook = async (
   // removes first match and returns it
   const listen = (
     mask: DeepPartial<Stripe.Event>,
-    timeout = 100000,
+    timeout = 20000,
     interval = 500
   ) =>
     waitFor(
