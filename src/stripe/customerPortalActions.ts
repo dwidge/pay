@@ -1,24 +1,10 @@
-import { expect } from "expect";
-import { z } from "zod";
-import { Plan, User } from "../Pay.js";
 import { Page } from "playwright";
-import { StripePay } from "./StripePay.js";
 
 export async function signupSubscriptionInPortal(
-  stripePay: StripePay,
-  customer: User,
-  plan: Plan,
   page: Page,
+  url: string,
   card: string
 ) {
-  const url = z.string().parse(
-    await stripePay.getPlanUrl({
-      customerId: customer.customerId,
-      planId: plan.id,
-      successUrl: "http://localhost",
-    })
-  );
-  expect(url).toMatch("https://checkout.stripe.com/c/pay/");
   console.log("Visit this page:", url);
   console.log(
     "Test payments:",
@@ -39,17 +25,10 @@ export async function signupSubscriptionInPortal(
 }
 
 export async function cancelSubscriptionInPortal(
-  stripePay: StripePay,
-  customer: User,
-  page: Page
+  page: Page,
+  portalUrl: string
 ) {
-  const portalUrl = z.string().parse(
-    await stripePay.getPortalUrl(customer.customerId, {
-      returnUrl: "http://localhost",
-    })
-  );
   console.log("Visit this page and cancel with feedback:", portalUrl);
-
   await page.goto(portalUrl);
   await page.locator('[data-test="cancel-subscription"]').click();
   await page.getByTestId("confirm").click();
@@ -60,18 +39,11 @@ export async function cancelSubscriptionInPortal(
 }
 
 export async function changeSubscriptionInPortal(
-  stripePay: StripePay,
-  customer: User,
   page: Page,
+  portalUrl: string,
   planName: string | RegExp
 ) {
-  const portalUrl = z.string().parse(
-    await stripePay.getPortalUrl(customer.customerId, {
-      returnUrl: "http://localhost",
-    })
-  );
   console.log("Visit this page and change plan:", planName, portalUrl);
-
   await page.goto(portalUrl);
   await page.locator('[data-test="update-subscription"]').click();
   await page

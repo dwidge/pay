@@ -73,15 +73,20 @@ describe("StripePlan", () => {
 
   it("testStripePlanSubCancel", async () => {
     await withCustomer(async (customer: User) => {
-      await signupSubscriptionInPortal(
-        stripePay,
-        customer,
-        testPlan,
-        page,
-        infiniteTestCard
-      );
+      const url = await stripePay.getPlanUrl({
+        customerId: customer.customerId,
+        planId: testPlan.id,
+        successUrl: "http://localhost",
+      });
+      expect(url).toMatch("https://checkout.stripe.com/c/pay/");
+      await signupSubscriptionInPortal(page, url, infiniteTestCard);
       await expectSubscriptionUpdated(hook, customer, testPlan.id, "active");
-      await cancelSubscriptionInPortal(stripePay, customer, page);
+      const portalUrl = z.string().parse(
+        await stripePay.getPortalUrl(customer.customerId, {
+          returnUrl: "http://localhost",
+        })
+      );
+      await cancelSubscriptionInPortal(page, portalUrl);
       await expectSubscriptionUpdatedCancelRequest(hook, customer, testPlan.id);
       await advanceClock(customer.customerId);
       await expectSubscriptionDeleted(hook, customer, testPlan.id);
@@ -90,33 +95,31 @@ describe("StripePlan", () => {
 
   it("testStripePlanSubChange", async () => {
     await withCustomer(async (customer: User) => {
-      await signupSubscriptionInPortal(
-        stripePay,
-        customer,
-        testPlan,
-        page,
-        infiniteTestCard
-      );
+      const url = await stripePay.getPlanUrl({
+        customerId: customer.customerId,
+        planId: testPlan.id,
+        successUrl: "http://localhost",
+      });
+      await signupSubscriptionInPortal(page, url, infiniteTestCard);
       await expectSubscriptionUpdated(hook, customer, testPlan.id, "active");
-      await changeSubscriptionInPortal(
-        stripePay,
-        customer,
-        page,
-        testPlan2.name
+      const portalUrl = z.string().parse(
+        await stripePay.getPortalUrl(customer.customerId, {
+          returnUrl: "http://localhost",
+        })
       );
+      await changeSubscriptionInPortal(page, portalUrl, testPlan2.name);
       await expectSubscriptionUpdated(hook, customer, testPlan2.id, "active");
     });
   });
 
   it("testStripePlanSubPaymentFail", async () =>
     withCustomer(async (customer: User) => {
-      await signupSubscriptionInPortal(
-        stripePay,
-        customer,
-        testPlan,
-        page,
-        emptyTestCard
-      );
+      const url = await stripePay.getPlanUrl({
+        customerId: customer.customerId,
+        planId: testPlan.id,
+        successUrl: "http://localhost",
+      });
+      await signupSubscriptionInPortal(page, url, emptyTestCard);
       await hook.listen({
         type: "invoice.updated",
       });
@@ -149,13 +152,12 @@ describe("StripePlan", () => {
         currency: "usd",
         interval: "month",
       });
-      await signupSubscriptionInPortal(
-        stripePay,
-        customer,
-        plan,
-        page,
-        infiniteTestCard
-      );
+      const url = await stripePay.getPlanUrl({
+        customerId: customer.customerId,
+        planId: plan.id,
+        successUrl: "http://localhost",
+      });
+      await signupSubscriptionInPortal(page, url, infiniteTestCard);
       await expectSubscriptionEvent(
         hook,
         "customer.subscription.updated",
@@ -165,13 +167,11 @@ describe("StripePlan", () => {
       );
       await stripePay.destroyPlan(plan.id);
       await expect(
-        signupSubscriptionInPortal(
-          stripePay,
-          customer,
-          plan,
-          page,
-          infiniteTestCard
-        )
+        stripePay.getPlanUrl({
+          customerId: customer.customerId,
+          planId: plan.id,
+          successUrl: "http://localhost",
+        })
       ).rejects.toThrowError(
         "The price specified is inactive. This field only accepts active prices."
       );
