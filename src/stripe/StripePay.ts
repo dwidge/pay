@@ -91,10 +91,10 @@ export class StripePay implements Pay {
     };
   }
 
-  async createCustomer(
-    user: Omit<User, "customerId">,
-    timeId?: string
-  ): Promise<User> {
+  async createCustomer(user: Omit<User, "customerId">): Promise<User> {
+    const timeId = this.config.secretKey.startsWith("sk_test")
+      ? await this.createTime()
+      : undefined;
     const { id: customerId } = await this.stripe.customers
       .create({
         email: user.email,
@@ -110,10 +110,29 @@ export class StripePay implements Pay {
       customerId,
     };
   }
+  async getCustomerTimeId(customerId: string): Promise<string> {
+    const customer = await this.stripe.customers
+      .retrieve(customerId)
+      .catch((cause) => {
+        throw new Error("getCustomerTimeIdStripePayE1", { cause });
+      });
+    return "" + (customer as Stripe.Customer).test_clock;
+  }
   async destroyCustomer(user: User): Promise<void> {
+    const timeId = await this.getCustomerTimeId(user.customerId);
     await this.stripe.customers.del(user.customerId).catch((cause) => {
       throw new Error("destroyCustomerStripePayE1", { cause });
     });
+    if (timeId) await this.destroyTime(timeId);
+  }
+  async advanceCustomerTime(
+    customerId: string,
+    time: number = getSecondsFromDate()
+  ): Promise<string> {
+    const timeId = await this.getCustomerTimeId(customerId);
+    if (!timeId) throw new Error("advanceCustomerTimeStripePayE1");
+    await this.advanceTime(timeId, time);
+    return timeId;
   }
 
   async createTime(time: number = getSecondsFromDate()): Promise<string> {

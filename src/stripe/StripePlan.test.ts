@@ -72,141 +72,124 @@ describe("StripePlan", () => {
   });
 
   it("testStripePlanSubCancel", async () => {
-    await withTime(async (timeId) => {
-      await withCustomer({ timeId }, async (customer: User) => {
-        await signupSubscriptionInPortal(
-          stripePay,
-          customer,
-          testPlan,
-          page,
-          infiniteTestCard
-        );
-        await expectSubscriptionUpdated(hook, customer, testPlan.id, "active");
-        await cancelSubscriptionInPortal(stripePay, customer, page);
-        await expectSubscriptionUpdatedCancelRequest(
-          hook,
-          customer,
-          testPlan.id
-        );
-        await advanceClock(timeId);
-        await expectSubscriptionDeleted(hook, customer, testPlan.id);
-      });
+    await withCustomer(async (customer: User) => {
+      await signupSubscriptionInPortal(
+        stripePay,
+        customer,
+        testPlan,
+        page,
+        infiniteTestCard
+      );
+      await expectSubscriptionUpdated(hook, customer, testPlan.id, "active");
+      await cancelSubscriptionInPortal(stripePay, customer, page);
+      await expectSubscriptionUpdatedCancelRequest(hook, customer, testPlan.id);
+      await advanceClock(customer.customerId);
+      await expectSubscriptionDeleted(hook, customer, testPlan.id);
     });
   });
+
   it("testStripePlanSubChange", async () => {
-    await withTime(async (timeId) => {
-      await withCustomer({ timeId }, async (customer: User) => {
-        await signupSubscriptionInPortal(
-          stripePay,
-          customer,
-          testPlan,
-          page,
-          infiniteTestCard
-        );
-        await expectSubscriptionUpdated(hook, customer, testPlan.id, "active");
-        await changeSubscriptionInPortal(
-          stripePay,
-          customer,
-          page,
-          testPlan2.name
-        );
-        await expectSubscriptionUpdated(hook, customer, testPlan2.id, "active");
-      });
+    await withCustomer(async (customer: User) => {
+      await signupSubscriptionInPortal(
+        stripePay,
+        customer,
+        testPlan,
+        page,
+        infiniteTestCard
+      );
+      await expectSubscriptionUpdated(hook, customer, testPlan.id, "active");
+      await changeSubscriptionInPortal(
+        stripePay,
+        customer,
+        page,
+        testPlan2.name
+      );
+      await expectSubscriptionUpdated(hook, customer, testPlan2.id, "active");
     });
   });
+
   it("testStripePlanSubPaymentFail", async () =>
-    withTime(async (timeId) =>
-      withCustomer({ timeId }, async (customer: User) => {
-        await signupSubscriptionInPortal(
-          stripePay,
+    withCustomer(async (customer: User) => {
+      await signupSubscriptionInPortal(
+        stripePay,
+        customer,
+        testPlan,
+        page,
+        emptyTestCard
+      );
+      await hook.listen({
+        type: "invoice.updated",
+      });
+      await expect(
+        expectSubscriptionEvent(
+          hook,
+          "customer.subscription.created",
           customer,
-          testPlan,
-          page,
-          emptyTestCard
-        );
-        await hook.listen({
-          type: "invoice.updated",
-        });
-        await expect(
-          expectSubscriptionEvent(
-            hook,
-            "customer.subscription.created",
-            customer,
-            testPlan.id,
-            "incomplete"
-          )
-        );
-        await advanceClock(timeId);
-        await expect(
-          expectSubscriptionEvent(
-            hook,
-            "customer.subscription.updated",
-            customer,
-            testPlan.id,
-            "active"
-          )
-        ).rejects.toThrow();
-      })
-    ));
+          testPlan.id,
+          "incomplete"
+        )
+      );
+      await advanceClock(customer.customerId);
+      await expect(
+        expectSubscriptionEvent(
+          hook,
+          "customer.subscription.updated",
+          customer,
+          testPlan.id,
+          "active"
+        )
+      ).rejects.toThrow();
+    }));
+
   it("testStripePlanCreate", async () =>
-    withTime(async (timeId) =>
-      withCustomer({ timeId }, async (customer: User) => {
-        const plan = await stripePay.createPlan({
-          name: "test_testStripePlanCreate",
-          price: 1000,
-          currency: "usd",
-          interval: "month",
-        });
-        await signupSubscriptionInPortal(
+    withCustomer(async (customer: User) => {
+      const plan = await stripePay.createPlan({
+        name: "test_testStripePlanCreate",
+        price: 1000,
+        currency: "usd",
+        interval: "month",
+      });
+      await signupSubscriptionInPortal(
+        stripePay,
+        customer,
+        plan,
+        page,
+        infiniteTestCard
+      );
+      await expectSubscriptionEvent(
+        hook,
+        "customer.subscription.updated",
+        customer,
+        plan.id,
+        "active"
+      );
+      await stripePay.destroyPlan(plan.id);
+      await expect(
+        signupSubscriptionInPortal(
           stripePay,
           customer,
           plan,
           page,
           infiniteTestCard
-        );
-        await expectSubscriptionEvent(
-          hook,
-          "customer.subscription.updated",
-          customer,
-          plan.id,
-          "active"
-        );
-        await stripePay.destroyPlan(plan.id);
-        await expect(
-          signupSubscriptionInPortal(
-            stripePay,
-            customer,
-            plan,
-            page,
-            infiniteTestCard
-          )
-        ).rejects.toThrowError(
-          "The price specified is inactive. This field only accepts active prices."
-        );
-      })
-    ));
+        )
+      ).rejects.toThrowError(
+        "The price specified is inactive. This field only accepts active prices."
+      );
+    }));
 });
 
-async function withCustomer(
-  { timeId }: { timeId?: string },
-  f: (customer: User) => Promise<void>
-) {
+async function withCustomer(f: (customer: User) => Promise<void>) {
   const user = {
     firstName: "test_John",
     lastName: "test_Doe",
     email: makeEmailAlias(testEmail),
     phone: "555-555-7890",
   };
-  const customer = await stripePay.createCustomer(user, timeId);
+  const customer = await stripePay.createCustomer(user);
   try {
     expect(customer).toEqual(expect.objectContaining(user));
     expect(customer.customerId).toEqual(expect.any(String));
-    await expect(
-      hook.listen({
-        type: "customer.created",
-        data: { object: { email: user.email } },
-      })
-    ).resolves.toMatchObject({
+    await hook.listen({
       type: "customer.created",
       data: { object: { email: user.email } },
     });
@@ -225,9 +208,9 @@ async function withTime(f = async (timeId: string) => {}) {
   return await f(timeId).finally(() => stripePay.destroyTime(timeId));
 }
 
-async function advanceClock(timeId: string, days: number = 32) {
-  await stripePay.advanceTime(
-    timeId,
+async function advanceClock(customerId: string, days: number = 32) {
+  const timeId = await stripePay.advanceCustomerTime(
+    customerId,
     getSecondsFromDate() + getSecondsFromDays(days)
   );
   await hook.listen({
