@@ -57,52 +57,23 @@ export const makeStripeWebhook = async (
     console.log(`Server running on port ${port}`);
   });
 
-  const listen2 = async (type: string, data: Record<string, any> = {}) => {
-    return new Promise<Stripe.Event>((resolve) => {
-      const interval = setInterval(() => {
-        data;
-        const index = events.findIndex(
-          (e) =>
-            e.type === type &&
-            Object.entries(data).every(([key, val]) => {
-              console.log(
-                "listen1",
-                type,
-                key,
-                val,
-                (e.data.object as Record<string, any>)[key]
-              );
-
-              return (e.data.object as Record<string, any>)[key] === val;
-            })
-        );
-        if (index !== -1) {
-          clearInterval(interval);
-          const event = events[index];
-          events.splice(index, 1);
-          resolve(event);
-        }
-      }, 1000);
-    });
-  };
-
   const filter = (mask: DeepPartial<Stripe.Event>) =>
     events.filter((v) => deepFilter(v, mask));
 
   // removes first match and returns it
   const listen = (
     mask: DeepPartial<Stripe.Event>,
-    timeout = 20000,
+    retries = 20,
     interval = 500
   ) =>
     waitFor(
       async () => {
         const [event] = filter(mask);
-        if (!event) throw new Error();
+        if (!event) throw new Error("No event: " + JSON.stringify(mask));
         events.splice(events.indexOf(event), 1);
         return event;
       },
-      timeout,
+      retries,
       interval
     );
 
