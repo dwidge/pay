@@ -1,10 +1,6 @@
 import express from "express";
+import Router from "express-promise-router";
 import Stripe from "stripe";
-import ngrok from "@ngrok/ngrok";
-import { destroyWebhooks } from "./destroyWebhooks.js";
-import { DeepPartial } from "./DeepPartial.js";
-import { deepFilter } from "./deepFilter.js";
-import { waitFor } from "./waitFor.js";
 
 declare module "express" {
   interface Request {
@@ -19,90 +15,54 @@ declare module "http" {
 
 export const makeStripeWebhook = async (
   stripe: Stripe,
-  enabled_events: Stripe.WebhookEndpointCreateParams.EnabledEvent[] = ["*"],
-  port = 4050 + ((Math.random() * 900) | 0)
+  description: string,
+  url: string,
+  onEvent = async (event: Stripe.Event) => {},
+  enabled_events: Stripe.WebhookEndpointCreateParams.EnabledEvent[] = ["*"]
 ) => {
-  await destroyWebhooks(stripe, "test");
-  let events: Stripe.Event[] = [];
-  const app = express();
-  app.use(
+  const webhookEndpoint = await stripe.webhookEndpoints.create({
+    description,
+    enabled_events,
+    url,
+  });
+  if (!webhookEndpoint.secret) throw new Error("secretE1");
+  const router = makeStripeWebhookRouter(
+    stripe,
+    webhookEndpoint.secret,
+    onEvent
+  );
+  const close = async () => {
+    await stripe.webhookEndpoints.del(webhookEndpoint.id);
+  };
+  return { router, close };
+};
+
+export const makeStripeWebhookRouter = (
+  stripe: Stripe,
+  webhookSecret: string,
+  onEvent = async (event: Stripe.Event) => {}
+) => {
+  const router = Router();
+  router.use(
     express.json({
       verify: function (req, res, buf) {
         if (buf) req.raw = buf;
       },
     })
   );
-  app.post("/stripe/webhook", async (req, res) => {
-    try {
-      if (!req.raw) throw new Error("webhookE1");
-      if (!webhookEndpoint.secret) throw new Error("webhookE2");
+  router.post("/", async (req, res) => {
+    if (!req.raw) throw new Error("makeStripeWebhookRouterE1");
+    if (!webhookSecret) throw new Error("makeStripeWebhookRouterE2");
 
-      const event = stripe.webhooks.constructEvent(
-        req.raw,
-        req.headers["stripe-signature"]!,
-        webhookEndpoint.secret
-      );
-
-      console.log("webhook1", event.type, event.data.object);
-      events.push(event);
-
-      res.sendStatus(200);
-    } catch (e) {
-      console.log("webhookE3", e);
-      res.sendStatus(200);
-    }
-  });
-
-  const server = app.listen(port, () => {
-    console.log(`Server running on port ${port}`);
-  });
-
-  const filter = (mask: DeepPartial<Stripe.Event>) =>
-    events.filter((v) => deepFilter(v, mask));
-
-  // removes first match and returns it
-  const listen = (
-    mask: DeepPartial<Stripe.Event>,
-    retries = 20,
-    interval = 500
-  ) =>
-    waitFor(
-      async () => {
-        const [event] = filter(mask);
-        if (!event) throw new Error("No event: " + JSON.stringify(mask));
-        events.splice(events.indexOf(event), 1);
-        return event;
-      },
-      retries,
-      interval
+    const event = stripe.webhooks.constructEvent(
+      req.raw,
+      req.headers["stripe-signature"]!,
+      webhookSecret
     );
 
-  const ngrokListener = await ngrok
-    .forward({ addr: port, authtoken_from_env: true })
-    .catch((e) => {
-      console.log("ngrokE1", e.message);
-      throw e;
-    });
-  const externalUrl = ngrokListener.url();
-  // console.log("url1", externalUrl);
+    await onEvent(event);
 
-  const webhookEndpoint = await stripe.webhookEndpoints.create({
-    description: "test",
-    enabled_events,
-    url: externalUrl + "/stripe/webhook",
+    res.sendStatus(200);
   });
-  if (!webhookEndpoint.secret) throw new Error("secretE1");
-  // console.log("webhookEndpoint1", webhookEndpoint);
-
-  const close = async () => {
-    await stripe.webhookEndpoints.del(webhookEndpoint.id);
-    server.close();
-  };
-  const clear = () => {
-    events = [];
-  };
-
-  return { listen, filter, clear, close };
+  return router;
 };
-
-export type StripeWebhook = Awaited<ReturnType<typeof makeStripeWebhook>>;

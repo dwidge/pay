@@ -4,11 +4,10 @@ import {
   getSecondsFromDate,
   getSecondsFromDays,
 } from "../utils/getSecondsFromDate.js";
-import { hook } from "./StripePlan.test.js";
-import { StripeWebhook } from "../utils/makeStripeWebhook.js";
+import { TestStripeWebhook } from "../utils/makeTestStripeWebhook.js";
 
 export async function expectSubscriptionUpdatedCancelRequest(
-  hook: StripeWebhook,
+  hook: TestStripeWebhook,
   customer: User,
   planId: string
 ) {
@@ -53,7 +52,7 @@ export async function expectSubscriptionUpdatedCancelRequest(
 }
 
 export async function expectSubscriptionUpdated(
-  hook: StripeWebhook,
+  hook: TestStripeWebhook,
   customer: User,
   planId: string,
   status: "active" | "canceled" | "incomplete"
@@ -94,7 +93,7 @@ export async function expectSubscriptionUpdated(
 }
 
 export async function expectSubscriptionEvent(
-  hook: StripeWebhook,
+  hook: TestStripeWebhook,
   type:
     | "customer.subscription.created"
     | "customer.subscription.updated"
@@ -139,7 +138,7 @@ export async function expectSubscriptionEvent(
 }
 
 export async function expectSubscriptionDeleted(
-  hook: StripeWebhook,
+  hook: TestStripeWebhook,
   customer: User,
   planId: string
 ) {

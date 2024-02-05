@@ -6,9 +6,9 @@ import { getStripeEnv } from "./env.js";
 import { z } from "zod";
 import { makeEmailAlias } from "../utils/makeId.js";
 import {
-  StripeWebhook,
-  makeStripeWebhook,
-} from "../utils/makeStripeWebhook.js";
+  TestStripeWebhook,
+  makeTestStripeWebhook,
+} from "../utils/makeTestStripeWebhook.js";
 import { Plan, User } from "../Pay.js";
 import "../utils/toBeWithinRange.js";
 import {
@@ -51,19 +51,19 @@ const testEmail = testConfig.TEST_EMAIL;
 
 let stripeEnv: StripeEnv;
 export let stripePay: StripePay;
-export let hook: StripeWebhook;
+export let hook: TestStripeWebhook;
 let testPlan: Plan;
 let testPlan2: Plan;
 
-describe("StripePlan", () => {
-  before(async () => {
+describe("StripePlan", async () => {
+  await before(async () => {
     stripeEnv = getStripeEnv(process.env);
     stripePay = new StripePay(stripeEnv);
-    hook = await makeStripeWebhook(stripePay.stripe);
+    hook = await makeTestStripeWebhook(stripePay.stripe);
     testPlan = await stripePay.getPlan(testConfig.STRIPE_TEST_PLAN1_ID);
     testPlan2 = await stripePay.getPlan(testConfig.STRIPE_TEST_PLAN2_ID);
   });
-  after(async () => {
+  await after(async () => {
     if (!stripePay) return;
     if (hook) await hook.close();
     await page.close();
@@ -71,7 +71,7 @@ describe("StripePlan", () => {
     await browser.close();
   });
 
-  it("testStripePlanSubCancel", async () => {
+  await it("testStripePlanSubCancel", async () => {
     await withCustomer(async (customer: User) => {
       const url = await stripePay.getPlanUrl({
         customerId: customer.customerId,
@@ -93,7 +93,7 @@ describe("StripePlan", () => {
     });
   });
 
-  it("testStripePlanSubChange", async () => {
+  await it("testStripePlanSubChange", async () => {
     await withCustomer(async (customer: User) => {
       const url = await stripePay.getPlanUrl({
         customerId: customer.customerId,
@@ -112,7 +112,7 @@ describe("StripePlan", () => {
     });
   });
 
-  it("testStripePlanSubPaymentFail", async () =>
+  await it("testStripePlanSubPaymentFail", async () =>
     withCustomer(async (customer: User) => {
       const url = await stripePay.getPlanUrl({
         customerId: customer.customerId,
@@ -144,7 +144,7 @@ describe("StripePlan", () => {
       ).rejects.toThrow();
     }));
 
-  it("testStripePlanCreate", async () =>
+  await it("testStripePlanCreate", async () =>
     withCustomer(async (customer: User) => {
       const plan = await stripePay.createPlan({
         name: "test_testStripePlanCreate",
