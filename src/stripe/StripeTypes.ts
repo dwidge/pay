@@ -6,7 +6,7 @@ import { z, string, object } from "zod";
 
 export const StripeEnv = object({
   secretKey: string(),
-  webhookSecret: string(),
+  webhookSecret: z.ostring(),
   publishableKey: string(),
   urlScheme: string().optional(),
   merchantIdentifier: string().optional(),

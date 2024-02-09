@@ -7,6 +7,7 @@ import crypto from "crypto";
 import dns from "node:dns";
 
 import { PayfastEnv, PayfastEvent } from "./PayfastTypes.js";
+import { Req } from "../Pay.js";
 
 export function getParamString(pfData: Record<string, string>) {
   let pfParamString = "";
@@ -71,7 +72,9 @@ export async function ipLookup(domain: string): Promise<string[]> {
   });
 }
 
-const pfValidIP = async (headers: Record<string, string | string[]>) => {
+const pfValidIP = async (
+  headers: Record<string, string | string[] | undefined>
+) => {
   const validHosts = [
     "www.payfast.co.za",
     "sandbox.payfast.co.za",
@@ -82,6 +85,7 @@ const pfValidIP = async (headers: Record<string, string | string[]>) => {
   const pfIp = headers["x-forwarded-for"];
   const validIps = (await Promise.all(validHosts.map(ipLookup))).flat();
 
+  if (!pfIp) throw new Error("pfValidIPE2");
   if (!validIps.includes(pfIp instanceof Array ? pfIp[0] : pfIp)) {
     console.log("pfValidIPE1", pfIp, headers, validIps);
     throw new Error("pfValidIPE1");
@@ -114,12 +118,14 @@ const pfValidServerConfirmation = async (
 
 //developers.payfast.co.za/docs#step_4_confirm_payment
 export async function validatePayfast(
-  payload: object,
-  headers: Record<string, string | string[]>,
-  env: PayfastEnv
+  { body, headers }: Req,
+  env: Pick<
+    PayfastEnv,
+    "passPhrase" | "host" | "hookCheckAddress" | "hookCheckServer"
+  >
 ) {
   const { passPhrase = "", host = "sandbox.payfast.co.za" } = env;
-  const pfData = PayfastEvent.partial().parse(payload);
+  const pfData = PayfastEvent.partial().parse(body);
   const pfParamString = getParamString(pfData);
 
   if (pfData["signature"] !== getSignature(pfParamString, passPhrase))

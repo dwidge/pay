@@ -20,3 +20,8 @@ export async function waitFor<T>(
     }
   }
 }
+
+export const waitForF =
+  <F extends (...args: any[]) => any>(f: F) =>
+  (...args: Parameters<F>) =>
+    waitFor<ReturnType<F>>(() => f(...args));

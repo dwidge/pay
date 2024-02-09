@@ -9,13 +9,8 @@ import {
   PayfastIntent,
 } from "./PayfastTypes.js";
 
-import { Pay, PayEvent, PayIntent, User } from "../Pay.js";
-import {
-  getParamString,
-  getSignature,
-  getSignedParamString,
-  validatePayfast,
-} from "./utils.js";
+import { Pay, PayEvent, PayIntent, Req, User } from "../Pay.js";
+import { getParamString, getSignature, getSignedParamString } from "./utils.js";
 import { randId } from "../utils/randId.js";
 import { objSnakeCase } from "../utils/case.js";
 
@@ -98,32 +93,14 @@ export class PayfastPay implements Pay {
     };
   }
 
-  async destroyCustomer(user: User): Promise<void> {}
+  async destroyCustomer(customerId: string): Promise<void> {}
 
-  async verifyEvent(
-    body: object,
-    rawBody: string | Buffer,
-    headers: Record<string, string | string[]>
-  ): Promise<PayEvent> {
-    const event = await validatePayfast(body, headers, this.config);
-    if (!event.m_payment_id) throw new Error("verifyEventPayfastPayE1");
-
-    return {
-      paymentId: event.m_payment_id,
-      status: event.payment_status === "COMPLETE" ? "COMPLETE" : undefined,
-      type: event.payment_status,
-      data: JSON.stringify(event),
-    };
-  }
+  async handleEvent(event: PayEvent) {}
 
   async createEvent(
     intent: PayIntent,
     status: "COMPLETE" | "CANCELLED" = "COMPLETE"
-  ): Promise<{
-    body: PayfastEvent;
-    rawBody: string | Buffer;
-    headers: Record<string, string | string[]>;
-  }> {
+  ): Promise<Req> {
     const fee = 5;
     const data = PayfastIntent.parse(JSON.parse(intent.data));
 
@@ -158,6 +135,6 @@ export class PayfastPay implements Pay {
     );
     const headers = { "x-forwarded-for": "127.0.0.1" };
 
-    return { body, headers, rawBody: JSON.stringify(body) };
+    return { body, headers, raw: JSON.stringify(body) };
   }
 }

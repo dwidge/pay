@@ -1,6 +1,7 @@
-import { beforeEach, describe, it } from "node:test";
+import { before, after, describe, it } from "node:test";
 import { expect } from "expect";
 import { PayfastPay } from "./PayfastPay.js";
+import { PayfastWebhook } from "./PayfastWebhook.js";
 import { getPayfastEnv } from "./env.js";
 import { PayfastEnv, PayfastIntent } from "./PayfastTypes.js";
 
@@ -13,10 +14,15 @@ const testCustomer = {
 describe("PayfastPay", () => {
   let payfastEnv: PayfastEnv;
   let payfastPay: PayfastPay;
+  let webhook: PayfastWebhook;
 
-  beforeEach(() => {
+  before(() => {
     payfastEnv = getPayfastEnv(process.env);
     payfastPay = new PayfastPay(payfastEnv);
+    webhook = new PayfastWebhook(payfastEnv);
+  });
+  after(async () => {
+    await webhook.close();
   });
 
   it("getContext should return correct PayfastContext", async () => {
@@ -54,7 +60,7 @@ describe("PayfastPay", () => {
       signature: expect.any(String),
     });
 
-    await payfastPay.destroyCustomer(customer);
+    await payfastPay.destroyCustomer(customer.customerId);
   });
 
   it("verifyEvent should return correct PayEvent", async () => {
@@ -65,13 +71,9 @@ describe("PayfastPay", () => {
       100,
       "zar"
     );
-    const event = await payfastPay.createEvent(intent);
+    const req = await payfastPay.createEvent(intent);
 
-    const payEvent = await payfastPay.verifyEvent(
-      event.body,
-      event.rawBody,
-      event.headers
-    );
+    const payEvent = await webhook.parseEvent(req);
     expect(payEvent).toEqual({
       paymentId: expect.any(String),
       status: "COMPLETE" || undefined,
@@ -79,10 +81,7 @@ describe("PayfastPay", () => {
       data: expect.any(String),
     });
 
-    event.body["signature"] = "abc";
-
-    await expect(
-      payfastPay.verifyEvent(event.body, event.rawBody, event.headers)
-    ).rejects.toThrow("validateE1");
+    (req.body as any)["signature"] = "abc";
+    await expect(webhook.parseEvent(req)).rejects.toThrow("validateE1");
   });
 });

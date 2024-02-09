@@ -15,7 +15,8 @@
   "scripts": {
     "prepare": "rimraf dist && tsc",
     "test": "rimraf dist && tsc && node --enable-source-maps --test --test-name-pattern",
-    "dev": "dotenv -c development npm run"
+    "dev": "dotenv -c development npm run",
+    "playwright": "playwright codegen --viewport-size=600,480"
   },
   "peerDependencies": {
     "axios": "^1.6.2",

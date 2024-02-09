@@ -59,7 +59,7 @@ describe("StripePlan", async () => {
   await before(async () => {
     stripeEnv = getStripeEnv(process.env);
     stripePay = new StripePay(stripeEnv);
-    hook = await makeTestStripeWebhook(stripePay.stripe);
+    hook = await makeTestStripeWebhook(stripeEnv);
     testPlan = await stripePay.getPlan(testConfig.STRIPE_TEST_PLAN1_ID);
     testPlan2 = await stripePay.getPlan(testConfig.STRIPE_TEST_PLAN2_ID);
   });
@@ -195,7 +195,7 @@ async function withCustomer(f: (customer: User) => Promise<void>) {
     });
     await f(customer);
   } finally {
-    await stripePay.destroyCustomer(customer);
+    await stripePay.destroyCustomer(customer.customerId);
     await hook.listen({
       type: "customer.deleted",
       data: { object: { email: user.email } },

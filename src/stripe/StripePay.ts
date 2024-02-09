@@ -1,7 +1,6 @@
 import Stripe from "stripe";
-import { z } from "zod";
 import { PayEvent, Pay, User, Plan, UserPlan } from "../Pay.js";
-import { StripeContext, StripeEnv, StripeEvent } from "./StripeTypes.js";
+import { StripeContext, StripeEnv } from "./StripeTypes.js";
 import { getSecondsFromDate } from "../utils/getSecondsFromDate.js";
 
 type PayCallbacks = {
@@ -118,9 +117,9 @@ export class StripePay implements Pay {
       });
     return "" + (customer as Stripe.Customer).test_clock;
   }
-  async destroyCustomer(user: User): Promise<void> {
-    const timeId = await this.getCustomerTimeId(user.customerId);
-    await this.stripe.customers.del(user.customerId).catch((cause) => {
+  async destroyCustomer(customerId: string): Promise<void> {
+    const timeId = await this.getCustomerTimeId(customerId);
+    await this.stripe.customers.del(customerId).catch((cause) => {
       throw new Error("destroyCustomerStripePayE1", { cause });
     });
     if (timeId) await this.destroyTime(timeId);
@@ -154,56 +153,7 @@ export class StripePay implements Pay {
     await this.stripe.testHelpers.testClocks.del(timeId);
   }
 
-  async verifyStripeEvent(
-    payload: string | Buffer,
-    headers: Record<string, string | string[]>
-  ): Promise<StripeEvent> {
-    if (!this.config.webhookSecret)
-      return StripeEvent.parse(JSON.parse(payload.toString()));
-
-    try {
-      return StripeEvent.parse(
-        this.stripe.webhooks.constructEvent(
-          payload,
-          headers["stripe-signature"],
-          this.config.webhookSecret
-        )
-      );
-    } catch (cause) {
-      // res.sendStatus(400);
-      throw new Error("verifyEventStripePayE1", { cause });
-    }
-  }
-  async verifyEvent(
-    body: object,
-    rawBody: string | Buffer,
-    headers: Record<string, string | string[]>
-  ): Promise<PayEvent> {
-    const event = await this.verifyStripeEvent(rawBody, headers);
-    const data = event.data.object;
-    const paymentId = z.string().parse(data.id);
-    const status =
-      event.type === "payment_intent.succeeded" ? "COMPLETE" : undefined;
-
-    return {
-      paymentId,
-      status,
-      type: event.type,
-      data: JSON.stringify(data),
-    };
-  }
-  async handleStripeEvent(event: Stripe.Event) {
-    if (event.type === "customer.subscription.created") {
-      const customerId = event.data.object.customer.toString();
-    }
-    if (event.type === "customer.subscription.deleted") {
-      const customerId = event.data.object.customer.toString();
-    }
-    if (event.type === "customer.subscription.updated") {
-      const customerId = event.data.object.customer.toString();
-      const subs = event.data.object.items.data.map((v) => v);
-    }
-  }
+  async handleEvent(event: PayEvent) {}
 
   async getPortalUrl(customerId: string, options?: { returnUrl?: string }) {
     const session = await this.stripe.billingPortal.sessions.create({

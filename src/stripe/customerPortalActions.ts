@@ -55,3 +55,30 @@ export async function changeSubscriptionInPortal(
   await page.getByTestId("confirm").click();
   await page.getByTestId("return-to-business-link").click();
 }
+
+export async function changePaymentMethodInPortal(
+  page: Page,
+  portalUrl: string,
+  card: string
+) {
+  console.log("Visit this page and add payment method:", card, portalUrl);
+  await page.goto(portalUrl);
+  await page.getByRole("link", { name: "Add payment method" }).click();
+  const frame = page
+    .frameLocator('iframe[name*="__privateStripeFrame"]')
+    .first();
+  await frame.getByPlaceholder("1234 1234 1234").click();
+  await frame.getByPlaceholder("1234 1234 1234").fill(card);
+  await frame.getByPlaceholder("MM / YY").click();
+  await frame.getByPlaceholder("MM / YY").fill("12 / 25");
+  await frame.getByPlaceholder("CVC").click();
+  await frame.getByPlaceholder("CVC").fill("123");
+  await page.getByTestId("confirm").click();
+  await page.getByRole("button", { name: "More options" }).click();
+  await page
+    .locator('[data-test="nonDefaultPaymentInstrumentDeleteButton"]')
+    .click();
+  await page
+    .locator('[data-test="PaymentInstrumentActionsDetatchModalConfirmButton"]')
+    .click();
+}

@@ -42,7 +42,7 @@ describe("StripePay", () => {
     expect(customer).toEqual(expect.objectContaining(user));
     expect(customer.customerId).toEqual(expect.any(String));
 
-    await stripePay.destroyCustomer(customer);
+    await stripePay.destroyCustomer(customer.customerId);
   });
 
   it("createIntent returns the expected payment data", async () => {
@@ -78,6 +78,6 @@ describe("StripePay", () => {
       ephemeralKey: expect.any(String),
     });
 
-    await stripePay.destroyCustomer(customer);
+    await stripePay.destroyCustomer(customer.customerId);
   });
 });

@@ -1,12 +1,13 @@
 import Stripe from "stripe";
 
 export async function destroyWebhooks(stripe: Stripe, description: string) {
-  const webhookEndpoints = await stripe.webhookEndpoints.list({
-    limit: 3,
+  const all = await stripe.webhookEndpoints.list({
+    limit: 5,
   });
-  await Promise.all(
-    webhookEndpoints.data
-      .filter((w) => w.description?.includes(description))
-      .map((w) => stripe.webhookEndpoints.del(w.id))
-  );
+  const some = all.data.filter((w) => w.description?.includes(description));
+  console.log("destroyWebhooks1", {
+    allCount: all.data.length,
+    destroyCount: some.length,
+  });
+  await Promise.all(some.map((w) => stripe.webhookEndpoints.del(w.id)));
 }

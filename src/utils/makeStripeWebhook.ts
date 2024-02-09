@@ -2,17 +2,6 @@ import express from "express";
 import Router from "express-promise-router";
 import Stripe from "stripe";
 
-declare module "express" {
-  interface Request {
-    raw?: Buffer;
-  }
-}
-declare module "http" {
-  interface IncomingMessage {
-    raw: Buffer;
-  }
-}
-
 export const makeStripeWebhook = async (
   stripe: Stripe,
   description: string,

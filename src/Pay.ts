@@ -33,21 +33,23 @@ export const PayEvent = z.object({
 });
 export type PayEvent = z.infer<typeof PayEvent>;
 
+export type Req = {
+  body: object;
+  raw: string | Buffer;
+  headers: Record<string, string | string[] | undefined>;
+};
+
 export interface Pay {
   getContext(): Promise<PayContext>;
   createCustomer(user: Omit<User, "customerId">): Promise<User>;
-  destroyCustomer(user: User): Promise<void>;
+  destroyCustomer(customerId: string): Promise<void>;
   createIntent(
     user: User,
     item: string,
     amount: number,
     currency: string
   ): Promise<PayIntent>;
-  verifyEvent(
-    body: object,
-    rawBody: string | Buffer,
-    headers: Record<string, string | string[]>
-  ): Promise<PayEvent>;
+  handleEvent(event: PayEvent): Promise<void>;
 }
 
 export const Plan = z.object({

@@ -1,14 +1,14 @@
 import express from "express";
 import Stripe from "stripe";
-import { destroyWebhooks } from "./destroyWebhooks.js";
 import { DeepPartial } from "./DeepPartial.js";
 import { deepFilter } from "./deepFilter.js";
 import { waitFor } from "./waitFor.js";
 import { makeNgrokListener } from "./ngrok.js";
-import { makeStripeWebhook } from "./makeStripeWebhook.js";
+import { StripeEnv } from "../stripe/StripeTypes.js";
+import { StripeWebhook } from "../stripe/StripeWebhook.js";
 
 export const makeTestStripeWebhook = async (
-  stripe: Stripe,
+  stripeEnv: StripeEnv,
   enabled_events: Stripe.WebhookEndpointCreateParams.EnabledEvent[] = ["*"],
   port = 4050 + ((Math.random() * 900) | 0)
 ) => {
@@ -21,7 +21,7 @@ export const makeTestStripeWebhook = async (
   const listen = (
     mask: DeepPartial<Stripe.Event>,
     retries = 20,
-    interval = 500
+    interval = 1000
   ) =>
     waitFor(
       async () => {
@@ -45,19 +45,26 @@ export const makeTestStripeWebhook = async (
 
   const ngrok = await makeNgrokListener(port);
 
-  await destroyWebhooks(stripe, "test");
-  const webhook = await makeStripeWebhook(
-    stripe,
-    "test",
-    ngrok.url + "/stripe/webhook",
-    async (event) => {
-      events.push(event);
-    },
-    enabled_events
+  const webhook = new StripeWebhook(
+    stripeEnv,
+    Promise.resolve(ngrok.url + "/stripe/webhook"),
+    { description: "test", enabled_events }
   );
 
   const app = express();
-  app.use("/stripe/webhook", webhook.router);
+  app.use(
+    express.json({
+      verify: function (req, res, buf) {
+        if (buf) req.raw = buf;
+      },
+    })
+  );
+  app.post("/stripe/webhook", async (req, res) => {
+    const event = await webhook.verifyStripeEvent(req);
+    console.log("makeTestStripeWebhook1", event.type);
+    events.push(event);
+    res.sendStatus(200);
+  });
   const server = app.listen(port, () => {});
 
   return { listen, filter, clear, close };
