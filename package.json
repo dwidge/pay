@@ -3,7 +3,6 @@
   "version": "0.0.3",
   "license": "BSL-1.0",
   "author": "DWJ",
-  "type": "module",
   "exports": {
     ".": "./dist/index.js",
     "./*": "./dist/*.js"

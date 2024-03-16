@@ -3,7 +3,6 @@
     "allowJs": true,
     "declaration": true,
     "declarationMap": true,
-    "jsx": "react-jsx",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "outDir": "dist",
