@@ -191,6 +191,18 @@ export class StripePay implements Pay {
     });
     return subscriptions.data.some((s) => planIds.includes(s.id));
   }
+  async cancelPlans(subIds: string[]) {
+    await Promise.all(
+      subIds.map((subId) => this.stripe.subscriptions.cancel(subId))
+    );
+  }
+  async getPlans(customerId: string) {
+    var customer = (await this.stripe.customers.retrieve(customerId, {
+      expand: ["subscriptions"],
+    })) as Stripe.Customer;
+    return customer.subscriptions!.data.map((s) => s.id);
+  }
+
   async createPlan(newPlan: Readonly<Omit<Plan, "id">>) {
     newPlan = Plan.omit({ id: true }).parse(newPlan);
     const plan = await this.stripe.prices.create({
