@@ -15,7 +15,7 @@ import {
   getSecondsFromDate,
   getSecondsFromDays,
 } from "../utils/getSecondsFromDate.js";
-import { chromium } from "playwright";
+import { Browser, BrowserContext, Page, chromium } from "playwright";
 import {
   signupSubscriptionInPortal,
   cancelSubscriptionInPortal,
@@ -30,15 +30,6 @@ import {
 
 const infiniteTestCard = "4242 4242 4242 4242";
 const emptyTestCard = "4000000000000341";
-
-const browser = await chromium.launch({
-  headless: false,
-  slowMo: 50,
-});
-const context = await browser.newContext({
-  viewport: { width: 600, height: 400 },
-});
-const page = await context.newPage();
 
 const testConfig = z
   .object({
@@ -56,7 +47,18 @@ let testPlan: Plan;
 let testPlan2: Plan;
 
 describe("StripePlan", async () => {
+  let browser: Browser;
+  let context: BrowserContext;
+  let page: Page;
   await before(async () => {
+    browser = await chromium.launch({
+      headless: false,
+      slowMo: 50,
+    });
+    context = await browser.newContext({
+      viewport: { width: 600, height: 400 },
+    });
+    page = await context.newPage();
     stripeEnv = getStripeEnv(process.env);
     stripePay = new StripePay(stripeEnv);
     hook = await makeTestStripeWebhook(stripeEnv);
