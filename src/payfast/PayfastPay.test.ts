@@ -76,7 +76,7 @@ describe("PayfastPay", () => {
     const payEvent = await webhook.parseEvent(req);
     expect(payEvent).toEqual({
       paymentId: expect.any(String),
-      status: "COMPLETE" || undefined,
+      status: "COMPLETE",
       type: expect.any(String),
       data: expect.any(String),
     });

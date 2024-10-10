@@ -3,6 +3,10 @@
   "version": "0.0.6",
   "license": "BSL-1.0",
   "author": "DWJ",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dwidge/pay.git"
+  },
   "main": "./dist/index.js",
   "exports": {
     ".": "./dist/index.js",
@@ -35,5 +39,12 @@
     "playwright": "^1.41.1",
     "rimraf": "^5.0.5",
     "typescript": "^5.2.2"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "packageManager": "pnpm@9.7.1",
+  "engines": {
+    "node": ">=20"
   }
 }
